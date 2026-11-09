@@ -1,0 +1,135 @@
+import pandas as pd
+import pymysql
+from pymysql import Error
+
+input_file = r"C:\ProgramData\MySQL\MySQL Server 9.7\Uploads\fmceb_dataset-2026-11-06.csv"
+
+output_file = r"C:\ProgramData\MySQL\MySQL Server 9.7\Uploads\fmceb_dataset_cleaned.csv"
+
+# Read the file as bytes
+with open(input_file, "rb") as file:
+    data = file.read()
+
+# Remove the malformed trailing quotation marks
+data = data.replace(b' \\"""', b'')
+
+# Save the cleaned CSV
+with open(output_file, "wb") as file:
+    file.write(data)
+
+print("CSV cleaning completed successfully!")
+
+
+
+# ==========================================
+# 1. FILE PATH
+# ==========================================
+
+file_path = r"C:\ProgramData\MySQL\MySQL Server 9.7\Uploads\dataset-2026-11-06.csv"
+
+# ==========================================
+# 2. READ CSV
+# ==========================================
+
+df = pd.read_csv(
+    file_path,
+    dtype=str,
+    keep_default_na=False,
+    encoding="utf-8-sig"
+)
+
+print("Dataset loaded successfully!")
+print("Rows:", len(df))
+print("Columns:", len(df.columns))
+
+# ==========================================
+# 3. MYSQL CONNECTION
+# ==========================================
+
+connection = pymysql.connect(
+    host="localhost",
+    user="root",
+    password="******",
+    database="******",
+    port=3306,
+    charset="utf8mb4",
+    autocommit=False
+)
+
+# ==========================================
+# 4. DEFINE INSERT QUERY
+# ==========================================
+
+columns = [
+    "id", "reg_date", "bill_no", "bill_date",
+    "payment_date", "patient_name", "item_name",
+    "transaction_type", "unit", "med_category",
+    "dispensed_date", "sale_price", "quantity",
+    "total", "patient_payment_value",
+    "insurance_payment_value", "cost_price",
+    "total_cost", "profit", "profit_margin",
+    "payment_date_new", "bill_date_new"
+]
+
+# Validate CSV structure
+if list(df.columns) != columns:
+    raise ValueError("CSV columns do not match the expected table structure.")
+
+placeholders = ", ".join(["%s"] * len(columns))
+column_names = ", ".join(f"`{col}`" for col in columns)
+
+insert_query = f"""
+    INSERT INTO raw_data ({column_names})
+    VALUES ({placeholders})
+"""
+
+# ==========================================
+# 5. BATCH INSERTION
+# ==========================================
+
+batch_size = 10000
+total_inserted = 0
+
+try:
+
+    cursor = connection.cursor()
+
+    for start in range(0, len(df), batch_size):
+
+        batch = df.iloc[start:start + batch_size]
+
+        records = list(
+            batch.itertuples(index=False, name=None)
+        )
+
+        cursor.executemany(insert_query, records)
+
+        connection.commit()
+
+        total_inserted += len(records)
+
+        print(
+            f"Inserted {total_inserted:,} "
+            f"of {len(df):,} records"
+        )
+
+    print("\nData ingestion completed successfully!")
+    print(f"Total records inserted: {total_inserted:,}")
+
+except Exception as e:
+
+    connection.rollback()
+
+    print("Error during ingestion:", e)
+
+finally:
+
+    if 'cursor' in locals():
+        cursor.close()
+
+    connection.close()
+
+    print("MySQL connection closed.")
+
+
+
