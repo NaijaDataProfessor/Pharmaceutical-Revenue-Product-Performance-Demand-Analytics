@@ -1,0 +1,160 @@
+SELECT *
+FROM raw_data;
+
+CREATE TABLE abc_dataset AS
+(
+WITH product_data AS
+(
+	SELECT item_name, COUNT(item_name) item_count, SUM(CAST(total AS DECIMAL(20,2))) total_sale
+	FROM raw_data
+	GROUP BY item_name
+	ORDER BY total_sale DESC
+),
+engine_data AS (
+SELECT 
+	ROW_NUMBER() OVER(ORDER BY total_sale DESC) item_no,
+	item_name,
+    item_count,
+    total_sale,
+    ROW_NUMBER() OVER(ORDER BY total_sale DESC)/COUNT(*) OVER() item_pct,
+    total_sale / SUM(total_sale) OVER() as sale_pct
+FROM product_data
+),
+rnk_data AS
+(
+	SELECT 
+		*,
+       100 * SUM(sale_pct) OVER(ORDER BY item_no ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_sale_pct
+	FROM engine_data
+),
+abc_data AS 
+(
+SELECT 
+	*,
+    CASE
+		WHEN running_sale_pct < 86 THEN 'A'
+        WHEN running_sale_pct <= 95 THEN 'B'
+        ELSE 'C'
+	END AS abc_class
+FROM rnk_data
+)
+SELECT *
+FROM abc_data
+);
+
+SELECT *
+FROM abc_dataset;
+
+
+SELECT * 
+FROM raw_data;
+
+SELECT
+    item_name,
+    YEAR(dispensed_date) AS dispense_year,
+    MONTH(dispensed_date) AS month_number,
+    MONTHNAME(dispensed_date) AS month_name,
+    SUM(quantity) AS total_quantity
+FROM raw_data
+WHERE dispensed_date IS NOT NULL
+GROUP BY
+    item_name,
+    YEAR(dispensed_date),
+    MONTH(dispensed_date),
+    MONTHNAME(dispensed_date)
+ORDER BY
+    item_name,
+    dispense_year,
+    month_number;
+    
+CREATE TABLE xyz_data AS 
+(
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS month_start
+    UNION ALL
+    SELECT DATE_ADD(month_start, INTERVAL 1 MONTH)
+    FROM months
+    WHERE month_start < '2025-12-01'
+),
+monthly_demand AS (
+    SELECT
+        item_name,
+        DATE_FORMAT(dispensed_date, '%Y-%m-01') AS month_start,
+        SUM(quantity) AS total_quantity
+    FROM raw_data
+    WHERE dispensed_date >= '2025-01-01'
+      AND dispensed_date < '2026-01-01'
+    GROUP BY
+        item_name,
+        DATE_FORMAT(dispensed_date, '%Y-%m-01')
+),
+item_month_grid AS (
+    SELECT
+        i.item_name,
+        m.month_start,
+        COALESCE(d.total_quantity, 0) AS monthly_quantity
+    FROM (
+        SELECT DISTINCT item_name
+        FROM raw_data
+    ) i
+    CROSS JOIN months m
+
+    LEFT JOIN monthly_demand d
+        ON i.item_name = d.item_name
+        AND m.month_start = d.month_start
+),
+xyz_metrics AS (
+    SELECT
+        item_name,
+        SUM(monthly_quantity) AS total_demand,
+        AVG(monthly_quantity) AS average_monthly_demand,
+        STDDEV_POP(monthly_quantity) AS demand_std,
+        CASE
+            WHEN AVG(monthly_quantity) = 0 THEN NULL
+            ELSE
+                STDDEV_POP(monthly_quantity)
+                / AVG(monthly_quantity)
+        END AS coefficient_of_variation
+    FROM item_month_grid
+    GROUP BY item_name
+)
+SELECT
+    item_name,
+    total_demand,
+    ROUND(average_monthly_demand, 2) AS average_monthly_demand,
+    ROUND(demand_std, 2) AS demand_std,
+    ROUND(coefficient_of_variation, 4) AS CV,
+    CASE
+        WHEN total_demand = 0 THEN 'NO DEMAND'
+        WHEN coefficient_of_variation <= 0.50 THEN 'X'
+        WHEN coefficient_of_variation <= 1.00 THEN 'Y'
+        ELSE 'Z'
+    END AS xyz_class
+FROM xyz_metrics
+ORDER BY
+    CV ASC
+);
+
+
+
+SHOW TABLES;
+
+
+SELECT * 
+FROM abc_dataset;
+
+SELECT *
+FROM xyz_data;
+
+CREATE TABLE matrix_data AS (
+SELECT 
+	ad.*,
+    xd.xyz_class,
+    CONCAT(ad.abc_class, xd.xyz_class) item_class,
+    xd.total_demand,
+    xd.average_monthly_demand,
+    xd.demand_std
+FROM abc_dataset ad
+JOIN xyz_data xd
+ON ad.item_name = xd.item_name
+);
