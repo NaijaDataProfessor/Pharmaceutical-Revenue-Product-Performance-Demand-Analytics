@@ -2,9 +2,9 @@ import pandas as pd
 import pymysql
 from pymysql import Error
 
-input_file = r"C:\ProgramData\MySQL\MySQL Server 9.7\Uploads\fmceb_dataset-2026-11-06.csv"
+input_file = r"C:\ProgramData\MySQL\MySQL Server 9.7\Uploads\dataset-2026-11-06.csv"
 
-output_file = r"C:\ProgramData\MySQL\MySQL Server 9.7\Uploads\fmceb_dataset_cleaned.csv"
+output_file = r"C:\ProgramData\MySQL\MySQL Server 9.7\Uploads\dataset_cleaned.csv"
 
 # Read the file as bytes
 with open(input_file, "rb") as file:
